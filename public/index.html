@@ -64,4 +64,193 @@
     <button class="topic-btn active" onclick="setTopic('all',this)">全部</button>
     <button class="topic-btn" onclick="setTopic('science',this)">科学</button>
     <button class="topic-btn" onclick="setTopic('society',this)">社会</button>
-    <button class="topic-btn" onclick="setTopic('business',this)">商业</
+    <button class="topic-btn" onclick="setTopic('business',this)">商业</button>
+    <button class="topic-btn" onclick="setTopic('tech',this)">科技</button>
+  </div>
+  <div class="card">
+    <div class="passage-nav">
+      <span class="card-label" style="margin:0">练习文段</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="diff" id="diff-badge">Medium</span>
+        <span style="font-size:12px;color:#ccc;" id="p-counter">1 / 8</span>
+      </div>
+    </div>
+    <div class="passage" id="passage"></div>
+  </div>
+  <div class="card">
+    <div class="card-label">录音</div>
+    <div class="status" id="status">点击开始，进入 30 秒准备 → 40 秒录音流程</div>
+    <div class="waveform" id="waveform"></div>
+    <div class="controls">
+      <button class="btn-rec" id="btn-rec" onclick="handleBtn()">
+        <span class="dot"></span>
+        <span id="btn-label">开始准备</span>
+      </button>
+      <span class="timer" id="timer"></span>
+      <button class="btn-next" onclick="nextPassage()">下一题 →</button>
+    </div>
+  </div>
+  <div class="card" id="result-card">
+    <div class="card-label" style="margin-bottom:12px">评测结果</div>
+    <div class="score-grid">
+      <div class="score-box"><div class="score-num" id="s-overall">—</div><div class="score-sub">综合得分</div></div>
+      <div class="score-box"><div class="score-num" id="s-fluency">—</div><div class="score-sub">流利度</div></div>
+      <div class="score-box"><div class="score-num" id="s-integrity">—</div><div class="score-sub">完整度</div></div>
+    </div>
+    <div class="card-label">逐词评分</div>
+    <div class="passage" id="word-result"></div>
+    <div class="legend">
+      <span><span class="lego" style="background:#c8f0d0"></span>≥80 优秀</span>
+      <span><span class="lego" style="background:#fff3c4"></span>60–79 待改进</span>
+      <span><span class="lego" style="background:#ffd6d6"></span>&lt;60 错误</span>
+    </div>
+    <div class="tips" id="tips"></div>
+  </div>
+</div>
+<script>
+const passages = [
+  { text: "The rapid advancement of artificial intelligence has fundamentally transformed how businesses operate across virtually every industry sector worldwide.", topic: "tech", diff: "easy" },
+  { text: "Neuroscientists have discovered that the human brain retains remarkable plasticity well into adulthood, challenging long-held assumptions about cognitive development and learning capacity.", topic: "science", diff: "medium" },
+  { text: "Sustainable urban planning requires a delicate balance between economic development, environmental preservation, and the social needs of diverse communities living within metropolitan areas.", topic: "society", diff: "medium" },
+  { text: "The globalisation of supply chains has created unprecedented interdependencies between national economies, making isolated policy decisions increasingly difficult to implement without international repercussions.", topic: "business", diff: "hard" },
+  { text: "Quantum computing represents a paradigm shift in computational power, leveraging the principles of superposition and entanglement to solve problems that would take classical computers millennia to process.", topic: "tech", diff: "hard" },
+  { text: "Biodiversity loss, driven primarily by habitat destruction and climate change, poses an existential threat to ecosystems that provide essential services underpinning human civilisation.", topic: "science", diff: "hard" },
+  { text: "Remote work arrangements have fundamentally altered expectations around work-life balance, prompting organisations to reconsider traditional productivity metrics and management philosophies.", topic: "business", diff: "medium" },
+  { text: "Cultural heritage preservation has gained renewed urgency as communities recognise the profound connection between historical memory, collective identity, and psychological well-being.", topic: "society", diff: "medium" },
+];
+const diffLabel = { easy:"Easy", medium:"Medium", hard:"Hard" };
+const diffClass = { easy:"diff-easy", medium:"diff-medium", hard:"diff-hard" };
+let currentTopic = "all", filtered = [...passages], idx = 0;
+let phase = "idle", timerSec = 0, timerIv = null, waveIv = null;
+let mediaRecorder = null, audioChunks = [];
+
+function renderPassage() {
+  const p = filtered[idx];
+  document.getElementById("passage").innerHTML = p.text.split(" ").map((w,i) => `<span class="w" id="w${i}">${w}</span> `).join("");
+  const b = document.getElementById("diff-badge");
+  b.textContent = diffLabel[p.diff]; b.className = "diff " + diffClass[p.diff];
+  document.getElementById("p-counter").textContent = `${idx+1} / ${filtered.length}`;
+}
+function setTopic(t, el) {
+  currentTopic = t;
+  document.querySelectorAll(".topic-btn").forEach(b => b.classList.remove("active"));
+  el.classList.add("active");
+  filtered = t === "all" ? [...passages] : passages.filter(p => p.topic === t);
+  idx = 0; resetAll(); renderPassage();
+}
+function nextPassage() { resetAll(); idx = (idx + 1) % filtered.length; renderPassage(); }
+function setStatus(t) { document.getElementById("status").textContent = t; }
+function resetAll() {
+  clearInterval(timerIv); clearInterval(waveIv);
+  if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  phase = "idle";
+  document.getElementById("btn-label").textContent = "开始准备";
+  document.getElementById("btn-rec").classList.remove("recording");
+  document.getElementById("timer").textContent = "";
+  setStatus("点击开始，进入 30 秒准备 → 40 秒录音流程");
+  stopWave();
+  document.getElementById("result-card").style.display = "none";
+}
+function handleBtn() {
+  if (phase === "idle") startPrep();
+  else if (phase === "prep") startRecording();
+  else if (phase === "recording") stopRecording();
+  else if (phase === "done") { resetAll(); startPrep(); }
+}
+function startPrep() {
+  phase = "prep"; timerSec = 30;
+  document.getElementById("btn-label").textContent = "跳过 → 开始录音";
+  setStatus("准备阶段 — 默读文段，注意断句和重音");
+  document.getElementById("timer").textContent = "30s";
+  let i = 0;
+  const words = filtered[idx].text.split(" ");
+  const iv = setInterval(() => {
+    if (i > 0) document.getElementById("w"+(i-1))?.classList.remove("active");
+    if (i >= words.length) { clearInterval(iv); return; }
+    document.getElementById("w"+i)?.classList.add("active"); i++;
+  }, 500);
+  timerIv = setInterval(() => {
+    timerSec--; document.getElementById("timer").textContent = timerSec + "s";
+    if (timerSec <= 0) { clearInterval(timerIv); startRecording(); }
+  }, 1000);
+}
+async function startRecording() {
+  clearInterval(timerIv);
+  document.querySelectorAll(".w").forEach(w => w.classList.remove("active"));
+  phase = "recording"; timerSec = 40;
+  document.getElementById("btn-label").textContent = "停止录音";
+  document.getElementById("btn-rec").classList.add("recording");
+  setStatus("录音中 — 请朗读文段");
+  document.getElementById("timer").textContent = "40s";
+  startWave();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = () => { stream.getTracks().forEach(t => t.stop()); submitAudio(); };
+    mediaRecorder.start();
+  } catch(e) { setStatus("⚠ 麦克风访问失败: " + e.message); return; }
+  timerIv = setInterval(() => {
+    timerSec--; document.getElementById("timer").textContent = timerSec + "s";
+    if (timerSec <= 0) { clearInterval(timerIv); stopRecording(); }
+  }, 1000);
+}
+function stopRecording() {
+  clearInterval(timerIv); stopWave();
+  if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  phase = "done";
+  document.getElementById("btn-rec").classList.remove("recording");
+  document.getElementById("btn-label").textContent = "重新练习";
+  document.getElementById("timer").textContent = "";
+  setStatus("处理中，请稍候…");
+}
+async function submitAudio() {
+  const blob = new Blob(audioChunks, { type: "audio/webm" });
+  const form = new FormData();
+  form.append("audio", blob, "rec.webm");
+  form.append("text", filtered[idx].text);
+  form.append("type", "sentence");
+  form.append("lang", "en");
+  try {
+    const res = await fetch("/api/evaluate", { method: "POST", body: form });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    renderResult(data);
+  } catch(e) { setStatus("❌ 评测失败: " + e.message); }
+}
+function renderResult(data) {
+  setStatus("评测完成 ✓");
+  document.getElementById("result-card").style.display = "block";
+  const setScore = (id, val) => {
+    const el = document.getElementById(id);
+    el.textContent = val != null ? Math.round(val) : "—";
+    el.className = "score-num " + (val == null ? "" : val >= 80 ? "s-good" : val >= 60 ? "s-fair" : "s-bad");
+  };
+  setScore("s-overall", data.overall); setScore("s-fluency", data.fluency); setScore("s-integrity", data.integrity);
+  document.getElementById("word-result").innerHTML = (data.words||[]).map(w =>
+    `<span class="w ${w.color}" title="${w.score!=null?Math.round(w.score)+'分':'未识别'}">${w.word}</span> `
+  ).join("");
+  const tips = [];
+  if (data.fluency != null && data.fluency < 70) tips.push("⏱ 流利度偏低 — 练习整句不停顿朗读");
+  if (data.integrity != null && data.integrity < 70) tips.push("📋 完整度不足 — 注意不要漏读单词");
+  if ((data.words||[]).filter(w => w.color === "red").length >= 3) tips.push("🔴 多个单词发音错误 — 建议逐词跟读练习");
+  if (data.overall != null && data.overall >= 80) tips.push("🎉 发音整体良好，继续保持！");
+  document.getElementById("tips").innerHTML = tips.map(t => `<div class="tip">${t}</div>`).join("");
+  document.getElementById("result-card").scrollIntoView({ behavior: "smooth" });
+}
+function startWave() {
+  const wf = document.getElementById("waveform");
+  wf.innerHTML = Array.from({length:48}, () => `<div class="bar"></div>`).join("");
+  const bars = wf.querySelectorAll(".bar");
+  waveIv = setInterval(() => bars.forEach(b => { b.style.height = (Math.random()*34+3)+"px"; }), 70);
+}
+function stopWave() {
+  clearInterval(waveIv);
+  document.querySelectorAll(".bar").forEach(b => b.style.height = "3px");
+}
+renderPassage();
+document.getElementById("waveform").innerHTML = Array.from({length:48}, () => `<div class="bar"></div>`).join("");
+</script>
+</body>
+</html>
