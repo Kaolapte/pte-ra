@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PTE Read Aloud 发音评测</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #f5f4f0; min-height: 100vh; padding: 2rem 1rem; display: flex; justify-content: center; }
+  .app { max-width: 700px; width: 100%; }
+  .header { margin-bottom: 1.5rem; }
+  .header h1 { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+  .header p { font-size: 13px; color: #999; margin-top: 4px; }
+  .card { background: #fff; border-radius: 14px; border: 1px solid #ececec; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+  .card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #bbb; margin-bottom: 10px; }
+  .topic-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1rem; }
+  .topic-btn { font-size: 12px; padding: 5px 14px; border-radius: 20px; border: 1px solid #e0e0e0; background: #fff; color: #888; cursor: pointer; transition: all .15s; }
+  .topic-btn.active { background: #f0eeff; color: #5b4fcf; border-color: #c5bff5; }
+  .passage-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .diff { font-size: 11px; padding: 3px 9px; border-radius: 10px; }
+  .diff-easy { background: #e8f5e9; color: #2e7d32; }
+  .diff-medium { background: #fff8e1; color: #f57f17; }
+  .diff-hard { background: #fce4ec; color: #c62828; }
+  .passage { font-size: 15px; line-height: 2; color: #222; }
+  .passage .w { border-radius: 3px; padding: 1px 3px; transition: background .2s; }
+  .w.green { background: #c8f0d0; color: #1b5e20; }
+  .w.yellow { background: #fff3c4; color: #7c5a00; }
+  .w.red { background: #ffd6d6; color: #b71c1c; }
+  .w.gray { color: #ccc; }
+  .w.active { background: #e8e4ff; color: #3730a3; }
+  .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .btn-rec { display: flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 10px; border: 1px solid #ddd; background: #fff; font-size: 14px; cursor: pointer; transition: all .15s; font-weight: 500; }
+  .btn-rec:hover { background: #f8f8f8; }
+  .btn-rec.recording { background: #fff0f0; border-color: #f5aaaa; color: #c00; }
+  .btn-next { padding: 10px 18px; border-radius: 10px; border: 1px solid #e0e0e0; background: #fff; font-size: 13px; color: #888; cursor: pointer; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .recording .dot { animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+  .timer { font-size: 13px; color: #aaa; min-width: 28px; }
+  .waveform { display: flex; align-items: center; gap: 2px; height: 40px; margin: 10px 0; }
+  .bar { width: 3px; border-radius: 2px; background: #c5bff5; height: 3px; }
+  .status { font-size: 13px; color: #aaa; margin-bottom: 6px; min-height: 18px; }
+  .score-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 1rem; }
+  .score-box { background: #fafaf8; border-radius: 10px; padding: 12px; text-align: center; }
+  .score-num { font-size: 26px; font-weight: 600; }
+  .score-sub { font-size: 11px; color: #aaa; margin-top: 2px; }
+  .s-good { color: #2e7d32; }
+  .s-fair { color: #f57f17; }
+  .s-bad { color: #c62828; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: #aaa; margin-top: 10px; }
+  .lego { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+  #result-card { display: none; }
+  .tips { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .tip { font-size: 13px; color: #666; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>PTE Read Aloud 发音评测</h1>
+    <p>讯飞 ISE 引擎 · 逐词红绿黄评分</p>
+  </div>
+  <div class="topic-bar">
+    <button class="topic-btn active" onclick="setTopic('all',this)">全部</button>
+    <button class="topic-btn" onclick="setTopic('science',this)">科学</button>
+    <button class="topic-btn" onclick="setTopic('society',this)">社会</button>
+    <button class="topic-btn" onclick="setTopic('business',this)">商业</
