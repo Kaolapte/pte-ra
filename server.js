@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const cors = require("cors");
 const path = require("path");
+const { execSync } = require("child_process");
 
 const app = express();
 app.use(cors());
@@ -29,6 +30,20 @@ function buildAuthUrl() {
   const authorizationOrigin = `api_key="${CONFIG.APIKey}", algorithm="hmac-sha256", headers="host date request-line", signature="${signature}"`;
   const authorization = Buffer.from(authorizationOrigin).toString("base64");
   return `wss://${CONFIG.HOST}${CONFIG.PATH}?authorization=${encodeURIComponent(authorization)}&date=${encodeURIComponent(date)}&host=${CONFIG.HOST}`;
+}
+
+function convertToPcm(inputPath) {
+  const outputPath = inputPath + ".pcm";
+  try {
+    execSync(`ffmpeg -y -i "${inputPath}" -ar 16000 -ac 1 -f s16le "${outputPath}" 2>/dev/null`);
+    return outputPath;
+  } catch(e) {
+    return null;
+  }
+}
+
+function webmToPcmFallback(inputBuffer) {
+  return inputBuffer;
 }
 
 function evaluate(audioBuffer, refText, category = "read_sentence") {
@@ -86,11 +101,25 @@ app.post("/api/evaluate", upload.single("audio"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "缺少音频" });
   if (!req.body.text) return res.status(400).json({ error: "缺少文本" });
   const map = { sentence: "read_sentence", chapter: "read_chapter", word: "read_word" };
+
+  let pcmPath = null;
+  let audioBuffer;
+
   try {
-    const result = await evaluate(fs.readFileSync(req.file.path), req.body.text, map[req.body.type] || "read_sentence");
+    pcmPath = convertToPcm(req.file.path);
+    if (pcmPath && fs.existsSync(pcmPath)) {
+      audioBuffer = fs.readFileSync(pcmPath);
+    } else {
+      audioBuffer = fs.readFileSync(req.file.path);
+    }
+    const result = await evaluate(audioBuffer, req.body.text, map[req.body.type] || "read_sentence");
     res.json({ success: true, ...result });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-  finally { fs.unlink(req.file.path, () => {}); }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  } finally {
+    fs.unlink(req.file.path, () => {});
+    if (pcmPath) fs.unlink(pcmPath, () => {});
+  }
 });
 
 app.get("/api/health", (_, res) => res.json({ ok: true }));
